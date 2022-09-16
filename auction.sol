@@ -91,8 +91,8 @@ contract AuctionWithAdmin is Ownable {
     mapping(address => mapping(uint256 => BidDetails)) public bid_info;
     // Mapping from address to token ID for bid
     mapping(address => mapping(uint256 => OfferDetails)) public offer_info;
-    // Mapping from token ID to token price
-    mapping(IERC1155 => mapping(uint256 => uint256)) internal token_price;
+    // Mapping from sale ID to token price
+    mapping(uint256 => uint256) internal token_price;
     // Mapping from token ID to sale ID
     mapping(IERC1155 => mapping(uint256 => uint256)) internal tokenIdToSaleId;
     
@@ -101,6 +101,9 @@ contract AuctionWithAdmin is Ownable {
     mapping(IERC1155 => mapping(uint256 => uint256)) internal saleTokenQuantity;
     mapping(address => uint256[]) internal auctionTokenIds;
     mapping(address => uint256[]) internal dealTokenIds;
+
+    mapping(address => IERC1155) internal saleIdToNFT;
+    mapping(uint256 => uint256) internal saleIdToTokenId;
 
     uint256 public currentSaleId;
     uint256 public currentAuctionId;
@@ -134,6 +137,7 @@ contract AuctionWithAdmin is Ownable {
         address indexed _seller,
         uint256 _tokenId,
         uint256 _price,
+        uint256 _quantity,
         uint256 _time
     );
     event SellCancelled(
@@ -148,6 +152,7 @@ contract AuctionWithAdmin is Ownable {
         uint256 _tokenId,
         address _seller,
         uint256 _price,
+        uint256 _quantity,
         uint256 _time
     );
     event AuctionCreated(
@@ -543,99 +548,99 @@ contract AuctionWithAdmin is Ownable {
     /// @dev Offer on an sell.
     /// @param _tokenId - ID of token to offer on.
     /// @param _amount  - Offerer set the price (in token) of NFT token.
-    function makeOffer(IERC1155 nftToken, uint256 _tokenId, uint256 _amount) public {             
-        require(
-            EnumerableMap.get(saleId, _tokenId) != address(0) && token_price[nftToken][_tokenId] > 0,
-            "Token not for sell"
-        );
-        require(msg.sender != EnumerableMap.get(saleId, _tokenId), "Owner can't make the offer");
-        if(_amount < pending_claim_offer[msg.sender][_tokenId]){
-            _amount = pending_claim_offer[msg.sender][_tokenId];
-        }
-        // Offer must be greater than last offer.
-        require(
-            _amount > offer[_tokenId].price,
-            "Offer amount less then already offerred"
-        );
-        token.transferFrom(msg.sender, address(this), _amount - pending_claim_offer[msg.sender][_tokenId]);
-        if(offer[_tokenId].offerer == msg.sender){
-            offer[_tokenId].offerer = offer_info[msg.sender][_tokenId].prevOfferer;
-        }else{
-            if(offer_info[msg.sender][_tokenId].prevOfferer == address(0)){
-                offer_info[offer_info[msg.sender][_tokenId].offerer][_tokenId].prevOfferer = address(0);
-            }else{
-                offer_info[offer_info[msg.sender][_tokenId].prevOfferer][_tokenId].offerer = offer_info[msg.sender][_tokenId].offerer;
-                offer_info[offer_info[msg.sender][_tokenId].offerer][_tokenId].prevOfferer = offer_info[msg.sender][_tokenId].prevOfferer;
-            }
-        }
-        delete offer_info[msg.sender][_tokenId];       
-        OfferDetails memory offerInfo;
-        offerInfo = OfferDetails({
-            prevOfferer : offer[_tokenId].offerer,
-            offerer     : address(0),
-            price       : _amount,
-            time        : block.timestamp
-        });
-        if(offer_info[offer[_tokenId].offerer][_tokenId].offerer == address(0)){
-            offer_info[offer[_tokenId].offerer][_tokenId].offerer = msg.sender;
-        }       
-        offer_info[msg.sender][_tokenId] = offerInfo;
-        pending_claim_offer[msg.sender][_tokenId] = _amount;
-        offer[_tokenId].prevOfferer = offer[_tokenId].offerer;
-        offer[_tokenId].offerer = msg.sender;
-        offer[_tokenId].price = _amount;
-        emit OfferMaked(tokenIdToSaleId[nftToken][_tokenId], msg.sender, _tokenId, _amount, block.timestamp);
-    }
+    // function makeOffer(IERC1155 nftToken, uint256 _tokenId, uint256 _amount) public {             
+    //     require(
+    //         EnumerableMap.get(saleId, _tokenId) != address(0) && token_price[nftToken][_tokenId] > 0,
+    //         "Token not for sell"
+    //     );
+    //     require(msg.sender != EnumerableMap.get(saleId, _tokenId), "Owner can't make the offer");
+    //     if(_amount < pending_claim_offer[msg.sender][_tokenId]){
+    //         _amount = pending_claim_offer[msg.sender][_tokenId];
+    //     }
+    //     // Offer must be greater than last offer.
+    //     require(
+    //         _amount > offer[_tokenId].price,
+    //         "Offer amount less then already offerred"
+    //     );
+    //     token.transferFrom(msg.sender, address(this), _amount - pending_claim_offer[msg.sender][_tokenId]);
+    //     if(offer[_tokenId].offerer == msg.sender){
+    //         offer[_tokenId].offerer = offer_info[msg.sender][_tokenId].prevOfferer;
+    //     }else{
+    //         if(offer_info[msg.sender][_tokenId].prevOfferer == address(0)){
+    //             offer_info[offer_info[msg.sender][_tokenId].offerer][_tokenId].prevOfferer = address(0);
+    //         }else{
+    //             offer_info[offer_info[msg.sender][_tokenId].prevOfferer][_tokenId].offerer = offer_info[msg.sender][_tokenId].offerer;
+    //             offer_info[offer_info[msg.sender][_tokenId].offerer][_tokenId].prevOfferer = offer_info[msg.sender][_tokenId].prevOfferer;
+    //         }
+    //     }
+    //     delete offer_info[msg.sender][_tokenId];       
+    //     OfferDetails memory offerInfo;
+    //     offerInfo = OfferDetails({
+    //         prevOfferer : offer[_tokenId].offerer,
+    //         offerer     : address(0),
+    //         price       : _amount,
+    //         time        : block.timestamp
+    //     });
+    //     if(offer_info[offer[_tokenId].offerer][_tokenId].offerer == address(0)){
+    //         offer_info[offer[_tokenId].offerer][_tokenId].offerer = msg.sender;
+    //     }       
+    //     offer_info[msg.sender][_tokenId] = offerInfo;
+    //     pending_claim_offer[msg.sender][_tokenId] = _amount;
+    //     offer[_tokenId].prevOfferer = offer[_tokenId].offerer;
+    //     offer[_tokenId].offerer = msg.sender;
+    //     offer[_tokenId].price = _amount;
+    //     emit OfferMaked(tokenIdToSaleId[nftToken][_tokenId], msg.sender, _tokenId, _amount, block.timestamp);
+    // }
 
     /// @dev Receive offer from open sell.
     /// Transfer NFT ownership to offerer address.
     /// @param _tokenId - ID of NFT on offer.
-    function reciveOffer(IERC1155 nftToken, uint256 _tokenId) public {
-        require(msg.sender ==  EnumerableMap.get(saleId, _tokenId), "You are not owner");
-        nft_token.safeTransferFrom(address(this), offer[_tokenId].offerer, _tokenId, 1, "");
-        if(sell_service_fee == true){   
-            token.transfer(
-                beneficiary,
-                ((offer[_tokenId].price * sell_token_fee) / 100)
-            );
-            emit SellFee(
-                tokenIdToSaleId[nftToken][_tokenId],
-                _tokenId,
-                ((offer[_tokenId].price * sell_token_fee) / 100),
-                block.timestamp
-            );
-            token.transfer(
-                EnumerableMap.get(saleId, _tokenId),
-                ((offer[_tokenId].price * (100 - sell_token_fee)) / 100)
-            );
-        }else{
-            token.transfer(
-                EnumerableMap.get(saleId, _tokenId),
-                offer[_tokenId].price
-            );
-        }
-        for(uint256 i = 0; i < saleTokenIds[msg.sender][nftToken].length; i++){
-            if(saleTokenIds[msg.sender][nftToken][i] == _tokenId){
-                saleTokenIds[msg.sender][nftToken][i] = saleTokenIds[msg.sender][nftToken][saleTokenIds[msg.sender][nftToken].length-1];
-                delete saleTokenIds[msg.sender][nftToken][saleTokenIds[msg.sender][nftToken].length-1];
-                break;
-            }
-        }
-        delete token_price[nftToken][_tokenId];       
-        EnumerableMap.remove(saleId, _tokenId);
-        pending_claim_offer[offer[_tokenId].offerer][_tokenId] = 0;
-        emit OfferReceived(
-            tokenIdToSaleId[nftToken][_tokenId],
-            offer[_tokenId].offerer,
-            _tokenId,
-            msg.sender,
-            offer[_tokenId].price,
-            block.timestamp
-        );
-        delete offer_info[offer[_tokenId].offerer][_tokenId];
-        delete offer[_tokenId];
-        delete tokenIdToSaleId[nftToken][_tokenId];       
-    }
+    // function reciveOffer(IERC1155 nftToken, uint256 _tokenId) public {
+    //     require(msg.sender ==  EnumerableMap.get(saleId, _tokenId), "You are not owner");
+    //     nft_token.safeTransferFrom(address(this), offer[_tokenId].offerer, _tokenId, 1, "");
+    //     if(sell_service_fee == true){   
+    //         token.transfer(
+    //             beneficiary,
+    //             ((offer[_tokenId].price * sell_token_fee) / 100)
+    //         );
+    //         emit SellFee(
+    //             tokenIdToSaleId[nftToken][_tokenId],
+    //             _tokenId,
+    //             ((offer[_tokenId].price * sell_token_fee) / 100),
+    //             block.timestamp
+    //         );
+    //         token.transfer(
+    //             EnumerableMap.get(saleId, _tokenId),
+    //             ((offer[_tokenId].price * (100 - sell_token_fee)) / 100)
+    //         );
+    //     }else{
+    //         token.transfer(
+    //             EnumerableMap.get(saleId, _tokenId),
+    //             offer[_tokenId].price
+    //         );
+    //     }
+    //     for(uint256 i = 0; i < saleTokenIds[msg.sender][nftToken].length; i++){
+    //         if(saleTokenIds[msg.sender][nftToken][i] == _tokenId){
+    //             saleTokenIds[msg.sender][nftToken][i] = saleTokenIds[msg.sender][nftToken][saleTokenIds[msg.sender][nftToken].length-1];
+    //             delete saleTokenIds[msg.sender][nftToken][saleTokenIds[msg.sender][nftToken].length-1];
+    //             break;
+    //         }
+    //     }
+    //     delete token_price[nftToken][_tokenId];       
+    //     EnumerableMap.remove(saleId, _tokenId);
+    //     pending_claim_offer[offer[_tokenId].offerer][_tokenId] = 0;
+    //     emit OfferReceived(
+    //         tokenIdToSaleId[nftToken][_tokenId],
+    //         offer[_tokenId].offerer,
+    //         _tokenId,
+    //         msg.sender,
+    //         offer[_tokenId].price,
+    //         block.timestamp
+    //     );
+    //     delete offer_info[offer[_tokenId].offerer][_tokenId];
+    //     delete offer[_tokenId];
+    //     delete tokenIdToSaleId[nftToken][_tokenId];       
+    // }
     
 
     /// @dev Create claim after auction ends.
@@ -742,9 +747,9 @@ contract AuctionWithAdmin is Ownable {
 
     /// @dev Returns sell NFT token price.
     /// @param _tokenId - ID of NFT.
-    function getSellTokenPrice(IERC1155 nftToken, uint256 _tokenId) public view returns (uint256) {
-        return token_price[nftToken][_tokenId];
-    }
+    // function getSellTokenPrice(IERC1155 nftToken, uint256 _tokenId) public view returns (uint256) {
+    //     return token_price[nftToken][_tokenId];
+    // }
 
     /// @dev Buy from open sell.
     /// Transfer NFT ownership to buyer address.
@@ -752,12 +757,14 @@ contract AuctionWithAdmin is Ownable {
     /// @param _amount  - Seller set the price (in token) of NFT token.
     function buy(IERC1155 nftToken, uint256 _tokenId, uint256 _amount, uint256 _quantity) public {
         require(msg.sender != EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId]), "Owner can't buy");
+        require(saleTokenQuantity[nftToken][_tokenId]>=_quantity, "Not enough quantity for sale");
         require(
-            EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId]) != address(0) && token_price[nftToken][_tokenId] > 0,
+             EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId]) != address(0) && token_price[msg.sender][nftToken][_tokenId] > 0,
             "Token not for sell"
         );
-        require(_amount >= token_price[nftToken][_tokenId]*_quantity, "Your amount is less");
-        nft_token.safeTransferFrom(address(this), msg.sender, _tokenId, 1, "");
+        require(_amount >= token_price[msg.sender][nftToken][_tokenId]*_quantity, "Your amount is less");
+ 
+        nft_token.safeTransferFrom(address(this), msg.sender, _tokenId, _quantity, "");
         if(sell_service_fee == true){
             token.transferFrom(
                 msg.sender,
@@ -778,29 +785,39 @@ contract AuctionWithAdmin is Ownable {
         }else{
             token.transferFrom(
                 msg.sender,
-                EnumerableMap.get(saleId, _tokenId),
+                EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId]),
                 _amount 
             );  
         }  
+
         emit Buy(
             tokenIdToSaleId[nftToken][_tokenId],
             msg.sender,
             _tokenId,
-            EnumerableMap.get(saleId, _tokenId),
+            EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId]),
             _amount,
+            _quantity,
             block.timestamp
         );
-        delete token_price[nftToken][_tokenId];
-        delete tokenIdToSaleId[nftToken][_tokenId];
-        delete offer[_tokenId];
-        for(uint256 i = 0; i < saleTokenIds[msg.sender][nftToken].length; i++){
-            if(saleTokenIds[msg.sender][nftToken][i] == _tokenId){
-                saleTokenIds[msg.sender][nftToken][i] = saleTokenIds[msg.sender][nftToken][saleTokenIds[msg.sender][nftToken].length-1];
-                delete saleTokenIds[msg.sender][nftToken][saleTokenIds[msg.sender][nftToken].length-1];
-                break;
+
+        if((saleTokenQuantity[nftToken][_tokenId]-_quantity)==0)
+        {
+            delete token_price[msg.sender][nftToken][_tokenId];
+            delete offer[_tokenId];
+            delete saleTokenQuantity[nftToken][_tokenId];
+
+            for(uint256 i = 0; i < saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken].length; i++){
+                if(saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken][i] == _tokenId){
+                    saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken][i] = saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken][saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken].length-1];
+                    delete saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken][saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken].length-1];
+                    break; 
+                }
             }
+            EnumerableMap.remove(saleId, tokenIdToSaleId[nftToken][_tokenId]);    
+            delete tokenIdToSaleId[nftToken][_tokenId];
         }
-        EnumerableMap.remove(saleId, _tokenId);      
+        else 
+        saleTokenQuantity[nftToken][_tokenId]=saleTokenQuantity[nftToken][_tokenId]-_quantity;             
     }
 
     /// @dev Creates a new sell.
@@ -813,33 +830,38 @@ contract AuctionWithAdmin is Ownable {
         require(nftToken.balanceOf(msg.sender, _tokenId)>0, "You are not owner");
         require(nftToken.isApprovedForAll(msg.sender,address(this)), "Token not approved");        
 
-        token_price[nftToken][_tokenId] = _unitprice;
         currentSaleId++;
-        tokenIdToSaleId[nftToken][_tokenId] = currentSaleId;
-        saleTokenQuantity[nftToken][_tokenId] = _quantity;
+        
+        /// token unit price for sell
+        token_price[currentSaleId] = _unitprice;      
+        saleTokenQuantity[currentSaleId] = _quantity;  
+        saleIdToNFT[currentSaleId]=nftToken;
+        saleIdToTokenId[currentSaleId]=_tokenId;
+
+        tokenIdToSaleId[msg.sender][nftToken][_tokenId] = currentSaleId;        
         EnumerableMap.set(saleId, currentSaleId, msg.sender);
         saleTokenIds[msg.sender][nftToken].push(_tokenId);
         nftToken.safeTransferFrom(msg.sender, address(this), _tokenId, _quantity, "");
-        emit Sell(currentSaleId, msg.sender, _tokenId, _unitprice, block.timestamp);
-    },
+        emit Sell(currentSaleId, msg.sender, _tokenId, _unitprice, _quantity, block.timestamp);
+    }
 
     /// @dev Removes token from the list of open sell.
     /// Returns the NFT to original owner.
     /// @param _tokenId - ID of NFT on sell.
     function cancelSell(IERC1155 nftToken, uint256 _tokenId) public {
-        require(msg.sender ==  EnumerableMap.get(saleId, _tokenId) || msg.sender == owner(), "You are not owner");
-        require(token_price[nftToken][_tokenId] > 0, "Can't cancel the sell");
-        nft_token.safeTransferFrom(address(this), EnumerableMap.get(saleId, _tokenId), _tokenId, 1, "");
-        delete token_price[nftToken][_tokenId];
+        require(msg.sender ==  EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId]) || msg.sender == owner(), "You are not owner");
+        require(token_price[msg.sender][nftToken][_tokenId] > 0, "Can't cancel the sell");
+        nft_token.safeTransferFrom(address(this), EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId]), _tokenId, 1, "");
+        delete token_price[msg.sender][nftToken][_tokenId];
         currentSaleId--;
-        // for(uint256 i = 0; i < saleTokenIds[EnumerableMap.get(saleId, _tokenId)].length; i++){
-        //     if(saleTokenIds[EnumerableMap.get(saleId, _tokenId)][i] == _tokenId){
-        //         saleTokenIds[EnumerableMap.get(saleId, _tokenId)][i] = saleTokenIds[EnumerableMap.get(saleId, _tokenId)][saleTokenIds[EnumerableMap.get(saleId, _tokenId)].length-1];
-        //         delete saleTokenIds[EnumerableMap.get(saleId, _tokenId)][saleTokenIds[EnumerableMap.get(saleId, _tokenId)].length-1];
-        //         break;
-        //     }
-        // }
-        EnumerableMap.remove(saleId, _tokenId);      
+        for(uint256 i = 0; i < saleTokenIds[EnumerableMap.get(saleId, _tokenId)][nftToken].length; i++){
+            if(saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken][i] == _tokenId){
+                saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken][i] = saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken][saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken].length-1];
+                delete saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken][saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken].length-1];
+                break;
+            }
+        }
+        EnumerableMap.remove(saleId, tokenIdToSaleId[nftToken][_tokenId]);      
         emit SellCancelled(tokenIdToSaleId[nftToken][_tokenId], msg.sender, _tokenId, block.timestamp);
         delete tokenIdToSaleId[nftToken][_tokenId];
     }
@@ -901,10 +923,10 @@ contract AuctionWithAdmin is Ownable {
 
     /// @dev Returns the offer details, seller address ,token Id and price.
     /// @param index - Index of NFT on sale.
-    function saleDetails(IERC1155 nftToken, uint256 index) public view returns (OfferDetails memory offerInfo, address seller, uint256 tokenId, uint256 price){
-        (uint256 id,) = EnumerableMap.at(saleId, index);
-        return (offer[id], EnumerableMap.get(saleId, id), id, token_price[nftToken][id]);
-    }
+    // function saleDetails(IERC1155 nftToken, uint256 index) public view returns (OfferDetails memory offerInfo, address seller, uint256 tokenId, uint256 price){
+    //     (uint256 id,) = EnumerableMap.at(saleId, index);
+    //     return (offer[id], EnumerableMap.get(saleId, id), id, token_price[nftToken][id]);
+    // }
 
     /// @dev Returns the auction details and token Id.
     /// @param index - Index of NFT on auction.
@@ -915,9 +937,9 @@ contract AuctionWithAdmin is Ownable {
 
     /// @dev Returns sale and offer details on the basis of tokenId.
     /// @param tokenId - Id of NFT on sale.
-    function saleDetailsByTokenId(IERC1155 nftToken, uint256 tokenId) public view returns (OfferDetails memory offerInfo, address seller, uint256 price){             
-        return (offer[tokenId], EnumerableMap.get(saleId, tokenId), token_price[nftToken][tokenId]);
-    }
+    // function saleDetailsByTokenId(IERC1155 nftToken, uint256 tokenId) public view returns (OfferDetails memory offerInfo, address seller, uint256 price){             
+    //     return (offer[tokenId], EnumerableMap.get(saleId, tokenId), token_price[nftToken][tokenId]);
+    // }
 
     /// @dev Returns deal details on the basis of tokenId.
     /// @param tokenId - Id of NFT on deal.
@@ -946,27 +968,27 @@ contract AuctionWithAdmin is Ownable {
     }
 
     /// @dev Returns all sale details.
-    function getAllSaleInfo(IERC1155 nftToken) public view returns(OfferDetails[] memory, address[] memory seller, uint256[] memory price, uint256[] memory tokenIds){
-        OfferDetails[] memory offerInfo = new OfferDetails[](EnumerableMap.length(saleId));
-        for(uint256 i = 0; i < EnumerableMap.length(saleId); i++){
-            (uint256 id,) =  EnumerableMap.at(saleId, i);  
-            offerInfo [i] = (offer[id]);
-            seller[i] = EnumerableMap.get(saleId, id);
-            price[i] =  token_price[nftToken][id];
-            tokenIds[i] = id;
-        }
-        return (offerInfo, seller, price, tokenIds);
-    }
+    // function getAllSaleInfo(IERC1155 nftToken) public view returns(OfferDetails[] memory, address[] memory seller, uint256[] memory price, uint256[] memory tokenIds){
+    //     OfferDetails[] memory offerInfo = new OfferDetails[](EnumerableMap.length(saleId));
+    //     for(uint256 i = 0; i < EnumerableMap.length(saleId); i++){
+    //         (uint256 id,) =  EnumerableMap.at(saleId, i);  
+    //         offerInfo [i] = (offer[id]);
+    //         seller[i] = EnumerableMap.get(saleId, id);
+    //         price[i] =  token_price[nftToken][id];
+    //         tokenIds[i] = id;
+    //     }
+    //     return (offerInfo, seller, price, tokenIds);
+    // }
 
     /// @dev Returns string for token place in which market.
     /// @param tokenId - Id of NFT.
-    function checkMarket(IERC1155 nftToken, uint256 tokenId) public view returns(string memory){
+    function checkMarket(uint256 tokenId) public view returns(string memory){
         if(auction[tokenId].price > 0){
             return "Auction";
         }else if(deal[tokenId].price > 0){
             return "Deal";
-        }else if(token_price[nftToken][tokenId] > 0){
-            return "Sale";
+        // }else if(token_price[nftToken][tokenId] > 0){
+        //     return "Sale";
         }else{
             return "Not in market";
         }
