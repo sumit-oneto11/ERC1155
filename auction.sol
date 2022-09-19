@@ -98,11 +98,11 @@ contract AuctionWithAdmin is Ownable {
     
 
     mapping(address => mapping(IERC1155 => uint256[])) internal saleTokenIds;
-    mapping(IERC1155 => mapping(uint256 => uint256)) internal saleTokenQuantity;
+    mapping(uint256 => uint256) internal saleTokenQuantity;
     mapping(address => uint256[]) internal auctionTokenIds;
     mapping(address => uint256[]) internal dealTokenIds;
 
-    mapping(address => IERC1155) internal saleIdToNFT;
+    mapping(uint256 => IERC1155) internal saleIdToNFT;
     mapping(uint256 => uint256) internal saleIdToTokenId;
 
     uint256 public currentSaleId;
@@ -353,7 +353,7 @@ contract AuctionWithAdmin is Ownable {
     /// @param _startTime - Start time of deal.
     /// @param _endTime - End time of deal.
     function createDeal(
-        uint256 _tokenId,
+        uint256 _tokenId, 
         uint256 _price,
         uint256 _startTime,
         uint256 _endTime
@@ -753,16 +753,18 @@ contract AuctionWithAdmin is Ownable {
 
     /// @dev Buy from open sell.
     /// Transfer NFT ownership to buyer address.
-    /// @param _tokenId - ID of NFT on buy.
+    /// @param sellId - Sale ID of NFT on buy.
     /// @param _amount  - Seller set the price (in token) of NFT token.
-    function buy(IERC1155 nftToken, uint256 _tokenId, uint256 _amount, uint256 _quantity) public {
-        require(msg.sender != EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId]), "Owner can't buy");
-        require(saleTokenQuantity[nftToken][_tokenId]>=_quantity, "Not enough quantity for sale");
+    function buy(uint256 sellId, uint256 _amount, uint256 _quantity) public {
+        IERC1155 nftToken = saleIdToNFT[sellId]; 
+        uint256 _tokenId = saleIdToTokenId[sellId];
+        require(msg.sender != EnumerableMap.get(saleId, sellId), "Owner can't buy");
+        require(saleTokenQuantity[sellId]>=_quantity, "Not enough quantity for sale");
         require(
-             EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId]) != address(0) && token_price[msg.sender][nftToken][_tokenId] > 0,
+             EnumerableMap.get(saleId, sellId) != address(0) && token_price[sellId] > 0,
             "Token not for sell"
         );
-        require(_amount >= token_price[msg.sender][nftToken][_tokenId]*_quantity, "Your amount is less");
+        require(_amount >= token_price[sellId]*_quantity, "Your amount is less");
  
         nft_token.safeTransferFrom(address(this), msg.sender, _tokenId, _quantity, "");
         if(sell_service_fee == true){
@@ -785,7 +787,7 @@ contract AuctionWithAdmin is Ownable {
         }else{
             token.transferFrom(
                 msg.sender,
-                EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId]),
+                EnumerableMap.get(saleId, sellId),
                 _amount 
             );  
         }  
@@ -794,22 +796,22 @@ contract AuctionWithAdmin is Ownable {
             tokenIdToSaleId[nftToken][_tokenId],
             msg.sender,
             _tokenId,
-            EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId]),
+            EnumerableMap.get(saleId, sellId),
             _amount,
             _quantity,
             block.timestamp
         );
 
-        if((saleTokenQuantity[nftToken][_tokenId]-_quantity)==0)
+        if((saleTokenQuantity[sellId]-_quantity)==0)
         {
-            delete token_price[msg.sender][nftToken][_tokenId];
+            delete token_price[sellId];
             delete offer[_tokenId];
-            delete saleTokenQuantity[nftToken][_tokenId];
+            delete saleTokenQuantity[sellId];
 
-            for(uint256 i = 0; i < saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken].length; i++){
-                if(saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken][i] == _tokenId){
-                    saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken][i] = saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken][saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken].length-1];
-                    delete saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken][saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken].length-1];
+            for(uint256 i = 0; i < saleTokenIds[EnumerableMap.get(saleId, sellId)][nftToken].length; i++){
+                if(saleTokenIds[EnumerableMap.get(saleId, sellId)][nftToken][i] == _tokenId){
+                    saleTokenIds[EnumerableMap.get(saleId, sellId)][nftToken][i] = saleTokenIds[EnumerableMap.get(saleId, sellId)][nftToken][saleTokenIds[EnumerableMap.get(saleId, sellId)][nftToken].length-1];
+                    delete saleTokenIds[EnumerableMap.get(saleId, sellId)][nftToken][saleTokenIds[EnumerableMap.get(saleId, sellId)][nftToken].length-1];
                     break; 
                 }
             }
@@ -817,7 +819,7 @@ contract AuctionWithAdmin is Ownable {
             delete tokenIdToSaleId[nftToken][_tokenId];
         }
         else 
-        saleTokenQuantity[nftToken][_tokenId]=saleTokenQuantity[nftToken][_tokenId]-_quantity;             
+        saleTokenQuantity[sellId]=saleTokenQuantity[sellId]-_quantity;             
     }
 
     /// @dev Creates a new sell.
@@ -827,37 +829,39 @@ contract AuctionWithAdmin is Ownable {
     function sell(IERC1155 nftToken, uint256 _tokenId, uint256 _unitprice, uint256 _quantity) public {
         require(_unitprice > 0, "Price must be greater than zero");
         require(_quantity > 0, "Quantity must be greater than zero");
-        require(nftToken.balanceOf(msg.sender, _tokenId)>0, "You are not owner");
+        require(nftToken.balanceOf(msg.sender, _tokenId)>0, "You are not owner"); 
         require(nftToken.isApprovedForAll(msg.sender,address(this)), "Token not approved");        
 
         currentSaleId++;
-        
-        /// token unit price for sell
-        token_price[currentSaleId] = _unitprice;      
-        saleTokenQuantity[currentSaleId] = _quantity;  
-        saleIdToNFT[currentSaleId]=nftToken;
-        saleIdToTokenId[currentSaleId]=_tokenId;
 
-        tokenIdToSaleId[msg.sender][nftToken][_tokenId] = currentSaleId;        
+        /// token unit price for sell
+        token_price[currentSaleId] = _unitprice;
+        saleTokenQuantity[currentSaleId] = _quantity;
+        saleIdToNFT[currentSaleId] = nftToken;
+        saleIdToTokenId[currentSaleId] = _tokenId;
+
+        //tokenIdToSaleId[nftToken][nftToken][_tokenId] = currentSaleId;
         EnumerableMap.set(saleId, currentSaleId, msg.sender);
         saleTokenIds[msg.sender][nftToken].push(_tokenId);
         nftToken.safeTransferFrom(msg.sender, address(this), _tokenId, _quantity, "");
         emit Sell(currentSaleId, msg.sender, _tokenId, _unitprice, _quantity, block.timestamp);
-    }
+    },
 
     /// @dev Removes token from the list of open sell.
     /// Returns the NFT to original owner.
-    /// @param _tokenId - ID of NFT on sell.
-    function cancelSell(IERC1155 nftToken, uint256 _tokenId) public {
-        require(msg.sender ==  EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId]) || msg.sender == owner(), "You are not owner");
-        require(token_price[msg.sender][nftToken][_tokenId] > 0, "Can't cancel the sell");
-        nft_token.safeTransferFrom(address(this), EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId]), _tokenId, 1, "");
-        delete token_price[msg.sender][nftToken][_tokenId];
+    /// @param sellId - Sell ID of NFT on sell.
+    function cancelSell(uint256 sellId) public {
+        IERC1155 nftToken = saleIdToNFT[sellId]; 
+        uint256 _tokenId = saleIdToTokenId[sellId];
+        require(msg.sender ==  EnumerableMap.get(saleId, sellId) || msg.sender == owner(), "You are not owner");
+        require(token_price[sellId] > 0, "Can't cancel the sell");
+        nft_token.safeTransferFrom(address(this), EnumerableMap.get(saleId, sellId), _tokenId, 1, "");
+        delete token_price[sellId];
         currentSaleId--;
-        for(uint256 i = 0; i < saleTokenIds[EnumerableMap.get(saleId, _tokenId)][nftToken].length; i++){
-            if(saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken][i] == _tokenId){
-                saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken][i] = saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken][saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken].length-1];
-                delete saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken][saleTokenIds[EnumerableMap.get(saleId, tokenIdToSaleId[nftToken][_tokenId])][nftToken].length-1];
+        for(uint256 i = 0; i < saleTokenIds[EnumerableMap.get(saleId, sellId)][nftToken].length; i++) {
+            if(saleTokenIds[EnumerableMap.get(saleId, sellId)][nftToken][i] == _tokenId) {
+                saleTokenIds[EnumerableMap.get(saleId, sellId)][nftToken][i] = saleTokenIds[EnumerableMap.get(saleId, sellId)][nftToken][saleTokenIds[EnumerableMap.get(saleId, sellId)][nftToken].length-1];
+                delete saleTokenIds[EnumerableMap.get(saleId, sellId)][nftToken][saleTokenIds[EnumerableMap.get(saleId, sellId)][nftToken].length-1];
                 break;
             }
         }
