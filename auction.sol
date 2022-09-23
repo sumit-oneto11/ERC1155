@@ -55,12 +55,12 @@ contract AuctionWithAdmin is Ownable {
 
     // Represents an offer on an NFT
     struct OfferDetails {
-        // Price (in token) at beginning of auction
-        uint256 price;
         // Address of offerer
         address offerer;
+        // Price (in token) at beginning of auction
+        uint256 amount;        
         // Address of prevOfferer
-        address prevOfferer;
+        uint256 quantity;
         // Time (in seconds) when offer created
         uint256 time;
     }
@@ -77,7 +77,7 @@ contract AuctionWithAdmin is Ownable {
         uint256 time;
     }
 
-        // Mapping token ID to their corresponding auction.
+    // Mapping token ID to their corresponding auction.
     mapping(uint256 => AuctionDetails) internal auction;
     // Mapping token ID to their corresponding deal.
     mapping(uint256 => DealDetails) internal deal;
@@ -99,6 +99,7 @@ contract AuctionWithAdmin is Ownable {
 
     mapping(address => mapping(IERC1155 => uint256[])) internal saleTokenIds;
     mapping(uint256 => uint256) internal saleTokenQuantity;
+    mapping(uint256 => uint256) internal totalOffer;
     mapping(address => uint256[]) internal auctionTokenIds;
     mapping(address => uint256[]) internal dealTokenIds;
 
@@ -213,7 +214,8 @@ contract AuctionWithAdmin is Ownable {
         uint256 indexed _saleId,
         address indexed _offerer,
         uint256 _tokenId,
-        uint256 _price,
+        uint256 _price, 
+        uint256 _quantity,
         uint256 _time
     );
     event OfferReceived(
@@ -526,45 +528,11 @@ contract AuctionWithAdmin is Ownable {
     /// @dev Cancel the Offer.
     /// Transfer the offer amount to owner.
     /// @param _tokenId - ID of NFT on sell.
-    function cancelOffer(IERC1155 nftToken, uint256 _tokenId) public {
-        require(cancel_offer_enable, "You can't cancel the offer");
-        if(offer[_tokenId].offerer == msg.sender){
-            offer[_tokenId].offerer = offer_info[msg.sender][_tokenId].prevOfferer;
-            offer[_tokenId].price   = offer_info[offer_info[msg.sender][_tokenId].prevOfferer][_tokenId].price;
-        }else{
-            if(offer_info[msg.sender][_tokenId].prevOfferer == address(0)){
-                offer_info[offer_info[msg.sender][_tokenId].offerer][_tokenId].prevOfferer = address(0);
-            }else{
-                offer_info[offer_info[msg.sender][_tokenId].prevOfferer][_tokenId].offerer = offer_info[msg.sender][_tokenId].offerer;
-                offer_info[offer_info[msg.sender][_tokenId].offerer][_tokenId].prevOfferer = offer_info[msg.sender][_tokenId].prevOfferer;
-            }
-        }
-        delete offer_info[msg.sender][_tokenId];
-        emit OfferCancelled(msg.sender, tokenIdToSaleId[nftToken][_tokenId], _tokenId, pending_claim_offer[msg.sender][_tokenId] - (pending_claim_offer[msg.sender][_tokenId] * (cancel_offer_fee / 100)), block.timestamp);
-        token.transfer(msg.sender, pending_claim_offer[msg.sender][_tokenId] - (pending_claim_offer[msg.sender][_tokenId] * (cancel_offer_fee / 100)));       
-        pending_claim_offer[msg.sender][_tokenId] = 0;        
-    }
-
-    /// @dev Offer on an sell.
-    /// @param _tokenId - ID of token to offer on.
-    /// @param _amount  - Offerer set the price (in token) of NFT token.
-    // function makeOffer(IERC1155 nftToken, uint256 _tokenId, uint256 _amount) public {             
-    //     require(
-    //         EnumerableMap.get(saleId, _tokenId) != address(0) && token_price[nftToken][_tokenId] > 0,
-    //         "Token not for sell"
-    //     );
-    //     require(msg.sender != EnumerableMap.get(saleId, _tokenId), "Owner can't make the offer");
-    //     if(_amount < pending_claim_offer[msg.sender][_tokenId]){
-    //         _amount = pending_claim_offer[msg.sender][_tokenId];
-    //     }
-    //     // Offer must be greater than last offer.
-    //     require(
-    //         _amount > offer[_tokenId].price,
-    //         "Offer amount less then already offerred"
-    //     );
-    //     token.transferFrom(msg.sender, address(this), _amount - pending_claim_offer[msg.sender][_tokenId]);
+    // function cancelOffer(IERC1155 nftToken, uint256 _tokenId) public {
+    //     require(cancel_offer_enable, "You can't cancel the offer");
     //     if(offer[_tokenId].offerer == msg.sender){
     //         offer[_tokenId].offerer = offer_info[msg.sender][_tokenId].prevOfferer;
+    //         offer[_tokenId].price   = offer_info[offer_info[msg.sender][_tokenId].prevOfferer][_tokenId].price;
     //     }else{
     //         if(offer_info[msg.sender][_tokenId].prevOfferer == address(0)){
     //             offer_info[offer_info[msg.sender][_tokenId].offerer][_tokenId].prevOfferer = address(0);
@@ -573,24 +541,37 @@ contract AuctionWithAdmin is Ownable {
     //             offer_info[offer_info[msg.sender][_tokenId].offerer][_tokenId].prevOfferer = offer_info[msg.sender][_tokenId].prevOfferer;
     //         }
     //     }
-    //     delete offer_info[msg.sender][_tokenId];       
-    //     OfferDetails memory offerInfo;
-    //     offerInfo = OfferDetails({
-    //         prevOfferer : offer[_tokenId].offerer,
-    //         offerer     : address(0),
-    //         price       : _amount,
-    //         time        : block.timestamp
-    //     });
-    //     if(offer_info[offer[_tokenId].offerer][_tokenId].offerer == address(0)){
-    //         offer_info[offer[_tokenId].offerer][_tokenId].offerer = msg.sender;
-    //     }       
-    //     offer_info[msg.sender][_tokenId] = offerInfo;
-    //     pending_claim_offer[msg.sender][_tokenId] = _amount;
-    //     offer[_tokenId].prevOfferer = offer[_tokenId].offerer;
-    //     offer[_tokenId].offerer = msg.sender;
-    //     offer[_tokenId].price = _amount;
-    //     emit OfferMaked(tokenIdToSaleId[nftToken][_tokenId], msg.sender, _tokenId, _amount, block.timestamp);
+    //     delete offer_info[msg.sender][_tokenId];
+    //     emit OfferCancelled(msg.sender, tokenIdToSaleId[nftToken][_tokenId], _tokenId, pending_claim_offer[msg.sender][_tokenId] - (pending_claim_offer[msg.sender][_tokenId] * (cancel_offer_fee / 100)), block.timestamp);
+    //     token.transfer(msg.sender, pending_claim_offer[msg.sender][_tokenId] - (pending_claim_offer[msg.sender][_tokenId] * (cancel_offer_fee / 100)));       
+    //     pending_claim_offer[msg.sender][_tokenId] = 0;        
     // }
+
+    /// @dev Offer on an sell.
+    /// @param sellId - Selll ID of token to offer on.
+    /// @param _amount  - Offerer set the price (in token) of NFT token.
+    function makeOffer(uint256 sellId, uint256 _amount, uint256 _quantity) public {             
+        require(
+            EnumerableMap.get(saleId, sellId) != address(0) && token_price[sellId] > 0,
+            "Token not for sell"
+        );
+        require(msg.sender != EnumerableMap.get(saleId, sellId), "Owner can't make the offer");
+        require(_quantity>=saleTokenQuantity[sellId],"Not enough quantity!");
+        
+        totalOffer[sellId]+=1;    
+
+        OfferDetails memory offerToken;
+        offerToken = OfferDetails({
+            offerer: msg.sender,
+            amount: _amount,
+            quantity: _quantity,
+            time: block.timestamp
+        }); 
+
+        offer[totalOffer[sellId]]=offerToken;
+
+        emit OfferMaked(sellId, msg.sender, sellId, _amount, _quantity, block.timestamp);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+    }
 
     /// @dev Receive offer from open sell.
     /// Transfer NFT ownership to offerer address.
@@ -767,18 +748,18 @@ contract AuctionWithAdmin is Ownable {
         require(_amount >= token_price[sellId]*_quantity, "Your amount is less");
  
         nft_token.safeTransferFrom(address(this), msg.sender, _tokenId, _quantity, "");
-        if(sell_service_fee == true){
+        if(sell_service_fee == true) {
             token.transferFrom(
                 msg.sender,
                 beneficiary,
                 ((_amount * sell_token_fee) / 100)
             );
-            emit SellFee(
-                tokenIdToSaleId[nftToken][_tokenId],
-                _tokenId,
-                ((offer[_tokenId].price * sell_token_fee) / 100),
-                block.timestamp
-            );
+            // emit SellFee(
+            //     tokenIdToSaleId[nftToken][_tokenId],
+            //     _tokenId,
+            //     ((offer[_tokenId].price * sell_token_fee) / 100),
+            //     block.timestamp
+            // );
             token.transferFrom(
                 msg.sender,
                 EnumerableMap.get(saleId, _tokenId),
@@ -845,17 +826,17 @@ contract AuctionWithAdmin is Ownable {
         saleTokenIds[msg.sender][nftToken].push(_tokenId);
         nftToken.safeTransferFrom(msg.sender, address(this), _tokenId, _quantity, "");
         emit Sell(currentSaleId, msg.sender, _tokenId, _unitprice, _quantity, block.timestamp);
-    },
+    }
 
     /// @dev Removes token from the list of open sell.
     /// Returns the NFT to original owner.
     /// @param sellId - Sell ID of NFT on sell.
     function cancelSell(uint256 sellId) public {
-        IERC1155 nftToken = saleIdToNFT[sellId]; 
+        IERC1155 nftToken = saleIdToNFT[sellId];
         uint256 _tokenId = saleIdToTokenId[sellId];
         require(msg.sender ==  EnumerableMap.get(saleId, sellId) || msg.sender == owner(), "You are not owner");
         require(token_price[sellId] > 0, "Can't cancel the sell");
-        nft_token.safeTransferFrom(address(this), EnumerableMap.get(saleId, sellId), _tokenId, 1, "");
+        nft_token.safeTransferFrom(address(this), EnumerableMap.get(saleId, sellId), _tokenId, saleTokenQuantity[currentSaleId], "");
         delete token_price[sellId];
         currentSaleId--;
         for(uint256 i = 0; i < saleTokenIds[EnumerableMap.get(saleId, sellId)][nftToken].length; i++) {
@@ -867,8 +848,9 @@ contract AuctionWithAdmin is Ownable {
         }
         EnumerableMap.remove(saleId, tokenIdToSaleId[nftToken][_tokenId]);      
         emit SellCancelled(tokenIdToSaleId[nftToken][_tokenId], msg.sender, _tokenId, block.timestamp);
-        delete tokenIdToSaleId[nftToken][_tokenId];
+        //delete tokenIdToSaleId[nftToken][_tokenId];
     }
+
 
     /// @dev Removes an auction from the list of open auctions.
     /// Returns the NFT to original owner.
