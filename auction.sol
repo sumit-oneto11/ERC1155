@@ -100,11 +100,14 @@ contract AuctionWithAdmin is Ownable {
     mapping(address => mapping(IERC1155 => uint256[])) internal saleTokenIds;
     mapping(uint256 => uint256) internal saleTokenQuantity;
     mapping(uint256 => uint256) internal totalOffer;
-    mapping(address => uint256[]) internal auctionTokenIds;
+    mapping(address => mapping(IERC1155 => uint256[])) internal auctionTokenIds;
     mapping(address => uint256[]) internal dealTokenIds;
 
     mapping(uint256 => IERC1155) internal saleIdToNFT;
     mapping(uint256 => uint256) internal saleIdToTokenId;
+
+    mapping(uint256 => IERC1155) internal auctionIdToNFT;
+    mapping(uint256 => uint256) internal auctionIdToTokenId;
 
     uint256 public currentSaleId;
     uint256 public currentAuctionId;
@@ -136,6 +139,7 @@ contract AuctionWithAdmin is Ownable {
     event Sell(
         uint256 indexed _id,
         address indexed _seller,
+        IERC1155 _token,
         uint256 _tokenId,
         uint256 _price,
         uint256 _quantity,
@@ -159,6 +163,7 @@ contract AuctionWithAdmin is Ownable {
     event AuctionCreated(
         uint256 indexed _id,
         address indexed _seller,
+        IERC1155 _token,
         uint256 _tokenId,
         uint256 _price,
         uint256 _startTime,
@@ -315,12 +320,13 @@ contract AuctionWithAdmin is Ownable {
     /// @param _startTime - Start time of auction.
     /// @param _endTime - End time of auction.
     function createAuction(
+        IERC1155 nftToken,
         uint256 _tokenId,
         uint256 _price,
         uint256 _startTime,
         uint256 _endTime
     ) public {
-        require(nft_token.balanceOf(msg.sender,_tokenId)>0, "You are not owner");
+        require(nftToken.balanceOf(msg.sender,_tokenId)>0, "Only owner");
         require(
             nft_token.isApprovedForAll(msg.sender,address(this)),
             "Token not approved"
@@ -331,7 +337,7 @@ contract AuctionWithAdmin is Ownable {
         );
         require(
             _price > 0,
-            "Price must be greater than zero"
+            "Invalid price"
         );
         currentAuctionId++;
         AuctionDetails memory auctionToken;
@@ -345,12 +351,14 @@ contract AuctionWithAdmin is Ownable {
             totalBids: 0
         });
         
-        EnumerableMap.set(auctionId, _tokenId, msg.sender);
-        auction[_tokenId] = auctionToken;
-        auctionTokenIds[msg.sender].push(_tokenId);
-        nft_token.safeTransferFrom(msg.sender, address(this), _tokenId, 1, "");
-        emit AuctionCreated(currentAuctionId, msg.sender, _tokenId, _price, _startTime, _endTime);
-    }
+        EnumerableMap.set(auctionId, currentAuctionId, msg.sender);
+        auction[currentAuctionId] = auctionToken;
+        auctionTokenIds[msg.sender][nftToken].push(_tokenId);
+        auctionIdToNFT[currentAuctionId] = nftToken;
+        auctionIdToTokenId[currentAuctionId] = _tokenId;
+        nftToken.safeTransferFrom(msg.sender, address(this), _tokenId, 1, "");
+        emit AuctionCreated(currentAuctionId, msg.sender, nftToken, _tokenId, _price, _startTime, _endTime);
+    },  
 
     /// @dev Creates and begins a new deal.
     /// @param _tokenId - ID of token to deal, sender must be owner.
@@ -363,7 +371,7 @@ contract AuctionWithAdmin is Ownable {
         uint256 _startTime,
         uint256 _endTime
     ) public onlyOwner{
-        require(nft_token.balanceOf(msg.sender,_tokenId)>0, "You are not owner");
+        require(nft_token.balanceOf(msg.sender,_tokenId)>0, "Only owner");
         require(
             nft_token.isApprovedForAll(msg.sender,address(this)),
             "Token not approved"
@@ -435,7 +443,7 @@ contract AuctionWithAdmin is Ownable {
     /// Returns the NFT to original owner.
     /// @param _tokenId - ID of NFT on deal.
     function cancelDeal(uint256 _tokenId) public onlyOwner {
-        require(msg.sender == EnumerableMap.get(dealId, _tokenId) || msg.sender == owner(), "You are not owner");
+        require(msg.sender == EnumerableMap.get(dealId, _tokenId) || msg.sender == owner(), "Only owner");
         require(deal[_tokenId].price > 0, "Can't cancel this deal");
         nft_token.safeTransferFrom(address(this), EnumerableMap.get(dealId, _tokenId), _tokenId,1,"");
         currentDealId--;
@@ -582,10 +590,10 @@ contract AuctionWithAdmin is Ownable {
     /// @dev Receive offer from open sell. 
     /// Transfer NFT ownership to offerer address.
     /// @param sellId - sellId of NFT on offer.
-    function reciveOffer(uint256 sellId, uint256 offerId) public {
+    function receiveOffer(uint256 sellId, uint256 offerId) public {
         IERC1155 nftToken = saleIdToNFT[sellId]; 
         uint256 _tokenId = saleIdToTokenId[sellId];
-        require(msg.sender ==  EnumerableMap.get(saleId, sellId), "You are not owner");
+        require(msg.sender ==  EnumerableMap.get(saleId, sellId), "Only owner");
         nft_token.safeTransferFrom(address(this), offer[sellId][offerId].offerer, _tokenId, offer[sellId][offerId].quantity, "");
         if(sell_service_fee == true){  /* 
             token.transfer(
@@ -644,46 +652,46 @@ contract AuctionWithAdmin is Ownable {
     /// Transfer NFT to auction winner address.
     /// Seller and Bidders (not win in auction) Withdraw their funds.
     /// @param _tokenId - ID of NFT.
-    function auctionClaim(uint256 _tokenId) public {
-        require(
-           auction[_tokenId].endTime < block.timestamp,
-            "auction not compeleted yet"
-        );
-        require(
-            auction[_tokenId].highestBidder == msg.sender || msg.sender == EnumerableMap.get(auctionId, _tokenId) || msg.sender == owner(),
-            "You are not highest Bidder or owner"
-        );
+    // function auctionClaim(uint256 _tokenId) public {
+    //     require(
+    //        auction[_tokenId].endTime < block.timestamp,
+    //         "auction not compeleted yet"
+    //     );
+    //     require(
+    //         auction[_tokenId].highestBidder == msg.sender || msg.sender == EnumerableMap.get(auctionId, _tokenId) || msg.sender == owner(),
+    //         "You are not highest Bidder or owner"
+    //     );
         
-        if(auction_service_fee == true){
-            token.transfer(
-                beneficiary,
-                ((auction[_tokenId].highestBid * auction_token_fee) / 100)
-            );
-            emit AuctionFee(auction[_tokenId].id, _tokenId, ((auction[_tokenId].highestBid * auction_token_fee) / 100), block.timestamp);
-            token.transfer(
-                EnumerableMap.get(auctionId, _tokenId),
-                ((auction[_tokenId].highestBid * (100 - auction_token_fee)) /
-                    100)
-            );
-        }else{
-            token.transfer(
-                EnumerableMap.get(auctionId, _tokenId),
-                auction[_tokenId].highestBid
-            );
-        }
-        pending_claim_auction[auction[_tokenId].highestBidder][_tokenId] = 0;
-        nft_token.safeTransferFrom(address(this), auction[_tokenId].highestBidder, _tokenId, 1, "");          
-        emit AuctionClaimed(auction[_tokenId].id, msg.sender, _tokenId, auction[_tokenId].highestBid, block.timestamp);
-        for(uint256 i = 0; i < auctionTokenIds[msg.sender].length; i++){
-            if(auctionTokenIds[msg.sender][i] == _tokenId){
-                auctionTokenIds[msg.sender][i] = auctionTokenIds[msg.sender][auctionTokenIds[msg.sender].length-1];
-                delete auctionTokenIds[msg.sender][auctionTokenIds[msg.sender].length-1];
-                break;
-            }
-        }
-        delete auction[_tokenId];
-        EnumerableMap.remove(auctionId, _tokenId);      
-    }
+    //     if(auction_service_fee == true){
+    //         token.transfer(
+    //             beneficiary,
+    //             ((auction[_tokenId].highestBid * auction_token_fee) / 100)
+    //         );
+    //         emit AuctionFee(auction[_tokenId].id, _tokenId, ((auction[_tokenId].highestBid * auction_token_fee) / 100), block.timestamp);
+    //         token.transfer(
+    //             EnumerableMap.get(auctionId, _tokenId),
+    //             ((auction[_tokenId].highestBid * (100 - auction_token_fee)) /
+    //                 100)
+    //         );
+    //     }else{
+    //         token.transfer(
+    //             EnumerableMap.get(auctionId, _tokenId),
+    //             auction[_tokenId].highestBid
+    //         );
+    //     }
+    //     pending_claim_auction[auction[_tokenId].highestBidder][_tokenId] = 0;
+    //     nft_token.safeTransferFrom(address(this), auction[_tokenId].highestBidder, _tokenId, 1, "");          
+    //     emit AuctionClaimed(auction[_tokenId].id, msg.sender, _tokenId, auction[_tokenId].highestBid, block.timestamp);
+    //     for(uint256 i = 0; i < auctionTokenIds[msg.sender].length; i++){
+    //         if(auctionTokenIds[msg.sender][i] == _tokenId){
+    //             auctionTokenIds[msg.sender][i] = auctionTokenIds[msg.sender][auctionTokenIds[msg.sender].length-1];
+    //             delete auctionTokenIds[msg.sender][auctionTokenIds[msg.sender].length-1];
+    //             break;
+    //         }
+    //     }
+    //     delete auction[_tokenId];
+    //     EnumerableMap.remove(auctionId, _tokenId);      
+    // }
 
     /// @dev Create claim after auction claim.
     /// bidders (not win in auction) Withdraw their funds.
@@ -826,7 +834,7 @@ contract AuctionWithAdmin is Ownable {
     function sell(IERC1155 nftToken, uint256 _tokenId, uint256 _unitprice, uint256 _quantity) public {
         require(_unitprice > 0, "Price must be greater than zero");
         require(_quantity > 0, "Quantity must be greater than zero");
-        require(nftToken.balanceOf(msg.sender, _tokenId)>0, "You are not owner"); 
+        require(nftToken.balanceOf(msg.sender, _tokenId)>0, "Only owner"); 
         require(nftToken.isApprovedForAll(msg.sender,address(this)), "Token not approved");        
 
         currentSaleId++;
@@ -841,7 +849,7 @@ contract AuctionWithAdmin is Ownable {
         EnumerableMap.set(saleId, currentSaleId, msg.sender);
         saleTokenIds[msg.sender][nftToken].push(_tokenId);
         nftToken.safeTransferFrom(msg.sender, address(this), _tokenId, _quantity, "");
-        emit Sell(currentSaleId, msg.sender, _tokenId, _unitprice, _quantity, block.timestamp);
+        emit Sell(currentSaleId, msg.sender, nftToken, _tokenId, _unitprice, _quantity, block.timestamp);
     }
 
     /// @dev Removes token from the list of open sell.
@@ -850,7 +858,7 @@ contract AuctionWithAdmin is Ownable {
     function cancelSell(uint256 sellId) public {
         IERC1155 nftToken = saleIdToNFT[sellId];
         uint256 _tokenId = saleIdToTokenId[sellId];
-        require(msg.sender ==  EnumerableMap.get(saleId, sellId) || msg.sender == owner(), "You are not owner");
+        require(msg.sender ==  EnumerableMap.get(saleId, sellId) || msg.sender == owner(), "Only owner");
         require(token_price[sellId] > 0, "Can't cancel the sell");
         nft_token.safeTransferFrom(address(this), EnumerableMap.get(saleId, sellId), _tokenId, saleTokenQuantity[currentSaleId], "");
         delete token_price[sellId];
@@ -871,20 +879,20 @@ contract AuctionWithAdmin is Ownable {
     /// @dev Removes an auction from the list of open auctions.
     /// Returns the NFT to original owner.
     /// @param _tokenId - ID of NFT on auction.
-    function cancelAuction(uint256 _tokenId) public {
-        require(msg.sender ==  EnumerableMap.get(auctionId, _tokenId) || msg.sender == owner(), "You are not owner");
-        nft_token.safeTransferFrom(address(this), EnumerableMap.get(auctionId, _tokenId), _tokenId, 1, "");
-        for(uint256 i = 0; i < auctionTokenIds[EnumerableMap.get(auctionId, _tokenId)].length; i++){
-            if(auctionTokenIds[EnumerableMap.get(auctionId, _tokenId)][i] == _tokenId){
-                auctionTokenIds[EnumerableMap.get(auctionId, _tokenId)][i] = auctionTokenIds[EnumerableMap.get(auctionId, _tokenId)][auctionTokenIds[EnumerableMap.get(auctionId, _tokenId)].length-1];
-                delete auctionTokenIds[EnumerableMap.get(auctionId, _tokenId)][auctionTokenIds[EnumerableMap.get(auctionId, _tokenId)].length-1];
-                break;
-            }
-        }
-        EnumerableMap.remove(auctionId, _tokenId);
-        emit AuctionCancelled(auction[_tokenId].id, msg.sender, _tokenId, block.timestamp);
-        delete auction[_tokenId];
-    }
+    // function cancelAuction(uint256 _tokenId) public {
+    //     require(msg.sender ==  EnumerableMap.get(auctionId, _tokenId) || msg.sender == owner(), "Only owner");
+    //     nft_token.safeTransferFrom(address(this), EnumerableMap.get(auctionId, _tokenId), _tokenId, 1, "");
+    //     for(uint256 i = 0; i < auctionTokenIds[EnumerableMap.get(auctionId, _tokenId)].length; i++){
+    //         if(auctionTokenIds[EnumerableMap.get(auctionId, _tokenId)][i] == _tokenId){
+    //             auctionTokenIds[EnumerableMap.get(auctionId, _tokenId)][i] = auctionTokenIds[EnumerableMap.get(auctionId, _tokenId)][auctionTokenIds[EnumerableMap.get(auctionId, _tokenId)].length-1];
+    //             delete auctionTokenIds[EnumerableMap.get(auctionId, _tokenId)][auctionTokenIds[EnumerableMap.get(auctionId, _tokenId)].length-1];
+    //             break;
+    //         }
+    //     }
+    //     EnumerableMap.remove(auctionId, _tokenId);
+    //     emit AuctionCancelled(auction[_tokenId].id, msg.sender, _tokenId, block.timestamp);
+    //     delete auction[_tokenId];
+    // }
 
     /// @dev Returns the user sell token Ids.
     function getSaleTokenId(IERC1155 nftToken, address _user) public view returns(uint256[] memory){
@@ -892,9 +900,9 @@ contract AuctionWithAdmin is Ownable {
     }
 
     /// @dev Returns the user auction token Ids.
-    function getAuctionTokenId(address _user) public view returns(uint256[] memory){
-        return auctionTokenIds[_user];
-    }
+    // function getAuctionTokenId(address _user) public view returns(uint256[] memory){
+    //     return auctionTokenIds[_user];
+    // }
 
     /// @dev Returns the user deal token Ids
     function getDealTokenId(address _user) public view returns(uint256[] memory){
