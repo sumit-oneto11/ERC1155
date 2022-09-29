@@ -58,7 +58,7 @@ contract AuctionWithAdmin is Ownable {
         // Address of offerer
         address offerer;
         // Price (in token) at beginning of auction
-        uint256 amount;        
+        uint256 uintPrice;        
         // Address of prevOfferer
         uint256 quantity;
         // Time (in seconds) when offer created
@@ -552,16 +552,16 @@ contract AuctionWithAdmin is Ownable {
 
     /// @dev Offer on an sell.
     /// @param sellId - Selll ID of token to offer on.
-    /// @param uintPrice  - Offerer set the price (in token) of NFT token.
-    function makeOffer(uint256 sellId, uint256 uintPrice, uint256 _quantity) public {             
+    /// @param _uintPrice  - Offerer set the price (in token) of NFT token.
+    function makeOffer(uint256 sellId, uint256 _uintPrice, uint256 _quantity) public {             
         require(
             EnumerableMap.get(saleId, sellId) != address(0) && token_price[sellId] > 0,
             "Token not for sell"
         );        
         require(msg.sender != EnumerableMap.get(saleId, sellId), "Owner can't make the offer!");
         require(_quantity<=saleTokenQuantity[sellId],"Not enough quantity!");
-        require(uintPrice>0,"Invalid offer price!");
-        require(token.transferFrom(msg.sender, address(this), uintPrice*_quantity),"Token transfer failed!"); 
+        require(_uintPrice>0,"Invalid offer price!");
+        require(token.transferFrom(msg.sender, address(this), _uintPrice*_quantity),"Token transfer failed!"); 
 
 
         totalOffer[sellId]+=1;
@@ -569,14 +569,14 @@ contract AuctionWithAdmin is Ownable {
         OfferDetails memory offerToken;
         offerToken = OfferDetails({
             offerer:  msg.sender,
-            amount:   uintPrice,
+            uintPrice:_uintPrice,
             quantity: _quantity,
             time:     block.timestamp
         });
         
         offer[sellId][totalOffer[sellId]]=offerToken;
 
-        emit OfferMaked(sellId, totalOffer[sellId], msg.sender, saleIdToNFT[sellId], saleIdToTokenId[sellId], uintPrice, _quantity, block.timestamp);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+        emit OfferMaked(sellId, totalOffer[sellId], msg.sender, saleIdToNFT[sellId], saleIdToTokenId[sellId], _uintPrice, _quantity, block.timestamp);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
     }
 
     /// @dev Receive offer from open sell. 
@@ -605,32 +605,39 @@ contract AuctionWithAdmin is Ownable {
         }else{
             token.transfer(
                 EnumerableMap.get(saleId, _tokenId),
-                offer[sellId][offerId].amount*offer[sellId][offerId].quantity
+                offer[sellId][offerId].uintPrice*offer[sellId][offerId].quantity
             );
         }
-        for(uint256 i = 0; i < saleTokenIds[msg.sender][nftToken].length; i++){
-            if(saleTokenIds[msg.sender][nftToken][i] == _tokenId){
-                saleTokenIds[msg.sender][nftToken][i] = saleTokenIds[msg.sender][nftToken][saleTokenIds[msg.sender][nftToken].length-1];
-                delete saleTokenIds[msg.sender][nftToken][saleTokenIds[msg.sender][nftToken].length-1];
-                break;
-            }
-        }
+        
+        if((saleTokenQuantity[sellId]-offer[sellId][offerId].quantity)==0)
+        {
+            EnumerableMap.remove(saleId, _tokenId);
+            delete offer_info[offer[sellId][_tokenId].offerer][_tokenId];
+            delete offer[sellId][_tokenId];
+            delete tokenIdToSaleId[nftToken][_tokenId];   
 
-        EnumerableMap.remove(saleId, _tokenId);
+            for(uint256 i = 0; i < saleTokenIds[msg.sender][nftToken].length; i++){
+              if(saleTokenIds[msg.sender][nftToken][i] == _tokenId){
+                    saleTokenIds[msg.sender][nftToken][i] = saleTokenIds[msg.sender][nftToken][saleTokenIds[msg.sender][nftToken].length-1];
+                    delete saleTokenIds[msg.sender][nftToken][saleTokenIds[msg.sender][nftToken].length-1];
+                    break;
+                }
+            }
+            
+        }
+        else 
+        saleTokenQuantity[sellId]=saleTokenQuantity[sellId]-offer[sellId][offerId].quantity;   
+
 
         emit OfferReceived(
-            tokenIdToSaleId[nftToken][_tokenId],
-            offer[sellId][_tokenId].offerer,
-            _tokenId,
-            msg.sender,
-            offer[sellId][_tokenId].amount,
-            block.timestamp
-        );
-
-        delete offer_info[offer[sellId][_tokenId].offerer][_tokenId];
-        delete offer[sellId][_tokenId];
-        delete tokenIdToSaleId[nftToken][_tokenId];       
-    },
+                tokenIdToSaleId[nftToken][_tokenId],
+                offer[sellId][_tokenId].offerer,
+                _tokenId,
+                msg.sender,
+                offer[sellId][_tokenId].uintPrice,
+                block.timestamp
+            );    
+    }
     
 
     /// @dev Create claim after auction ends.
