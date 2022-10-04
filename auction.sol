@@ -314,53 +314,8 @@ contract AuctionWithAdmin is Ownable {
         cancel_offer_enable = !cancel_offer_enable;
     }
 
-    /// @dev Creates and begins a new auction.
-    /// @param _tokenId - ID of token to auction, sender must be owner.
-    /// @param _price - Price of token (in token) at beginning of auction.
-    /// @param _startTime - Start time of auction.
-    /// @param _endTime - End time of auction.
-    function createAuction(
-        IERC1155 nftToken,
-        uint256 _tokenId,
-        uint256 _price,
-        uint256 _startTime,
-        uint256 _endTime
-    ) public {
-        require(nftToken.balanceOf(msg.sender,_tokenId)>0, "Only owner");
-        require(
-            nft_token.isApprovedForAll(msg.sender,address(this)),
-            "Token not approved"
-        );
-        require(
-            _startTime < _endTime && _endTime > block.timestamp,
-            "Check Time"
-        );
-        require(
-            _price > 0,
-            "Invalid price"
-        );
-        currentAuctionId++;
-        AuctionDetails memory auctionToken;
-        auctionToken = AuctionDetails({
-            id: currentAuctionId,
-            price: _price,
-            startTime: _startTime,
-            endTime: _endTime,
-            highestBidder: address(0),
-            highestBid: 0,
-            totalBids: 0
-        });
-        
-        EnumerableMap.set(auctionId, currentAuctionId, msg.sender);
-        auction[currentAuctionId] = auctionToken;
-        auctionTokenIds[msg.sender][nftToken].push(_tokenId);
-        auctionIdToNFT[currentAuctionId] = nftToken;
-        auctionIdToTokenId[currentAuctionId] = _tokenId;
-        nftToken.safeTransferFrom(msg.sender, address(this), _tokenId, 1, "");
-        emit AuctionCreated(currentAuctionId, msg.sender, nftToken, _tokenId, _price, _startTime, _endTime);
-    },  
 
-    /// @dev Creates and begins a new deal.
+        /// @dev Creates and begins a new deal.
     /// @param _tokenId - ID of token to deal, sender must be owner.
     /// @param _price - Price of token (in token) at deal.
     /// @param _startTime - Start time of deal.
@@ -459,82 +414,144 @@ contract AuctionWithAdmin is Ownable {
         emit DealCancelled(msg.sender, _tokenId, block.timestamp);
     }
 
+    /// @dev Creates and begins a new auction.
+    /// @param _tokenId - ID of token to auction, sender must be owner.
+    /// @param _price - Price of token (in token) at beginning of auction.
+    /// @param _startTime - Start time of auction.
+    /// @param _endTime - End time of auction.
+    function createAuction(
+        IERC1155 nftToken,
+        uint256 _tokenId,
+        uint256 _price,
+        uint256 _startTime,
+        uint256 _endTime
+    ) public {
+        require(nftToken.balanceOf(msg.sender,_tokenId)>0, "Only owner");
+        require(
+            nft_token.isApprovedForAll(msg.sender,address(this)),
+            "Token not approved"
+        );
+        require(
+            _startTime < _endTime && _endTime > block.timestamp,
+            "Check Time"
+        );
+        require(
+            _price > 0,
+            "Invalid price"
+        );
+        currentAuctionId++;
+        AuctionDetails memory auctionToken;
+        auctionToken = AuctionDetails({
+            id: currentAuctionId,
+            price: _price,
+            startTime: _startTime,
+            endTime: _endTime,
+            highestBidder: address(0),
+            highestBid: 0,
+            totalBids: 0
+        });
+        
+        EnumerableMap.set(auctionId, currentAuctionId, msg.sender);
+        auction[currentAuctionId] = auctionToken;
+        auctionTokenIds[msg.sender][nftToken].push(_tokenId);
+        auctionIdToNFT[currentAuctionId] = nftToken;
+        auctionIdToTokenId[currentAuctionId] = _tokenId;
+        nftToken.safeTransferFrom(msg.sender, address(this), _tokenId, 1, "");
+        emit AuctionCreated(currentAuctionId, msg.sender, nftToken, _tokenId, _price, _startTime, _endTime);
+    }  
+
     /// @dev Bids on an open auction.
-    /// @param _tokenId - ID of token to bid on.
+    /// @param _auctionId - _auctionId of token to bid on.
     /// @param _amount  - Bidder set the bid (in token) of NFT token.
-    function bid(uint256 _tokenId, uint256 _amount) public {      
-        require(
-            block.timestamp > auction[_tokenId].startTime,
-            "Auction not started yet!"
-        );
-        require(block.timestamp < auction[_tokenId].endTime, "Auction is over!");
-        require(msg.sender != EnumerableMap.get(auctionId, _tokenId), "Owner can't bid in auction!");
+    function bid(uint256 _auctionId, uint256 _amount) public {      
+        require(block.timestamp > auction[_auctionId].startTime, "Auction not started yet!");
+        require(block.timestamp < auction[_auctionId].endTime, "Auction is over!");
+        require(msg.sender != EnumerableMap.get(auctionId, _auctionId), "Owner can't bid in auction!");
         // The first bid, ensure it's >= the reserve price.
-        if(_amount < pending_claim_auction[msg.sender][_tokenId]){
-            _amount = pending_claim_auction[msg.sender][_tokenId];
+        if(_amount < pending_claim_auction[msg.sender][_auctionId]) {
+            _amount = pending_claim_auction[msg.sender][_auctionId];
         }
-        require(
-             _amount >= auction[_tokenId].price,
-            "Bid must be at least the reserve price!"
-        );
+        require(_amount >= auction[_auctionId].price, "Bid must be at least the reserve price!");
         // Bid must be greater than last bid.
-        require(_amount > auction[_tokenId].highestBid, "Bid amount too low!");
-        token.transferFrom(msg.sender, address(this), _amount - pending_claim_auction[msg.sender][_tokenId]);
+        require(_amount > auction[_auctionId].highestBid, "Bid amount too low!");
+        token.transferFrom(msg.sender, address(this), _amount - pending_claim_auction[msg.sender][_auctionId]);
        
-        if(auction[_tokenId].highestBidder == msg.sender){
-            auction[_tokenId].highestBidder = bid_info[msg.sender][_tokenId].prevBidder;
-            auction[_tokenId].totalBids--;
+        if(auction[_auctionId].highestBidder == msg.sender){
+            auction[_auctionId].highestBidder = bid_info[msg.sender][_auctionId].prevBidder;
+            auction[_auctionId].totalBids--;
         }else{
-            if(bid_info[msg.sender][_tokenId].prevBidder == address(0)){
-                bid_info[bid_info[msg.sender][_tokenId].nextBidder][_tokenId].prevBidder = address(0);
+            if(bid_info[msg.sender][_auctionId].prevBidder == address(0)){
+                bid_info[bid_info[msg.sender][_auctionId].nextBidder][_auctionId].prevBidder = address(0);
             }else{
-                bid_info[bid_info[msg.sender][_tokenId].prevBidder][_tokenId].nextBidder = bid_info[msg.sender][_tokenId].nextBidder;
-                bid_info[bid_info[msg.sender][_tokenId].nextBidder][_tokenId].prevBidder = bid_info[msg.sender][_tokenId].prevBidder;
+                bid_info[bid_info[msg.sender][_auctionId].prevBidder][_auctionId].nextBidder = bid_info[msg.sender][_auctionId].nextBidder;
+                bid_info[bid_info[msg.sender][_auctionId].nextBidder][_auctionId].prevBidder = bid_info[msg.sender][_auctionId].prevBidder;
             }
         }
-        delete bid_info[msg.sender][_tokenId];
-        
-        pending_claim_auction[msg.sender][_tokenId] = _amount;        
+        delete bid_info[msg.sender][_auctionId];
+         
+        pending_claim_auction[msg.sender][_auctionId] = _amount;        
         BidDetails memory bidInfo;
-        bidInfo = BidDetails({
-            prevBidder : auction[_tokenId].highestBidder,
+
+        bidInfo = BidDetails({ 
+            prevBidder : auction[_auctionId].highestBidder,
             nextBidder : address(0),
             amount     : _amount,
             time       : block.timestamp
         });
-        if(bid_info[auction[_tokenId].highestBidder][_tokenId].nextBidder == address(0)){
-            bid_info[auction[_tokenId].highestBidder][_tokenId].nextBidder = msg.sender;
+        
+        if(bid_info[auction[_auctionId].highestBidder][_auctionId].nextBidder == address(0)){
+            bid_info[auction[_auctionId].highestBidder][_auctionId].nextBidder = msg.sender;
         }       
-        bid_info[msg.sender][_tokenId] = bidInfo;
-        pending_claim_auction[msg.sender][_tokenId] = _amount;
-        auction[_tokenId].highestBidder = msg.sender;
-        auction[_tokenId].highestBid = _amount;
-        auction[_tokenId].totalBids++;
-        emit Bid(auction[_tokenId].id, msg.sender, _tokenId, _amount, block.timestamp);
-    }
+        bid_info[msg.sender][_auctionId] = bidInfo;
+        pending_claim_auction[msg.sender][_auctionId] = _amount;
+        auction[_auctionId].highestBidder = msg.sender;
+        auction[_auctionId].highestBid = _amount;
+        auction[_auctionId].totalBids++;
+        emit Bid(auction[_auctionId].id, msg.sender, _auctionId, _amount, block.timestamp);
+    }   
 
-    /// @dev Removes the bid from an auction.
-    /// Transfer the bid amount to owner.
-    /// @param _tokenId - ID of NFT on auction.
-    function cancelBid(uint256 _tokenId) public {
-        require(cancel_bid_enable, "You can't cancel the bid!");
-        if(auction[_tokenId].highestBidder == msg.sender){
-            auction[_tokenId].highestBidder = bid_info[msg.sender][_tokenId].prevBidder;
-            auction[_tokenId].highestBid    = bid_info[bid_info[msg.sender][_tokenId].prevBidder][_tokenId].amount;
-        }else{
-            if(bid_info[msg.sender][_tokenId].prevBidder == address(0)){
-                bid_info[bid_info[msg.sender][_tokenId].nextBidder][_tokenId].prevBidder = address(0);
-            }else{
-                bid_info[bid_info[msg.sender][_tokenId].prevBidder][_tokenId].nextBidder = bid_info[msg.sender][_tokenId].nextBidder;
-                bid_info[bid_info[msg.sender][_tokenId].nextBidder][_tokenId].prevBidder = bid_info[msg.sender][_tokenId].prevBidder;
+    /// @dev Create claim after auction ends.
+    /// Transfer NFT to auction winner address.
+    /// Seller and Bidders (not win in auction) Withdraw their funds.
+    /// @param _auctionId - ID of auction.
+
+    function auctionClaim(uint256 _auctionId) public {
+        IERC1155 nftToken = saleIdToNFT[_auctionId]; 
+        uint256 _tokenId = saleIdToTokenId[_auctionId];
+        require(auction[_auctionId].endTime < block.timestamp, "auction not compeleted yet");
+        require(
+            auction[_auctionId].highestBidder == msg.sender || msg.sender == EnumerableMap.get(auctionId, _auctionId) || msg.sender == owner(),
+            "You are not highest Bidder or owner"
+        );
+        
+        if(auction_service_fee == true){
+            token.transfer(
+                beneficiary,
+                ((auction[_auctionId].highestBid * auction_token_fee) / 100)
+            );
+            emit AuctionFee(auction[_auctionId].id, _auctionId, ((auction[_auctionId].highestBid * auction_token_fee) / 100), block.timestamp);
+            token.transfer(
+                EnumerableMap.get(auctionId, _auctionId),
+                ((auction[_auctionId].highestBid * (100 - auction_token_fee)) /
+                    100)
+            );
+        } else {
+            token.transfer(EnumerableMap.get(auctionId, _auctionId), auction[_auctionId].highestBid);
+        }
+        pending_claim_auction[auction[_auctionId].highestBidder][_auctionId] = 0;
+        nft_token.safeTransferFrom(address(this), auction[_auctionId].highestBidder, _auctionId, 1, "");          
+        emit AuctionClaimed(auction[_auctionId].id, msg.sender, _auctionId, auction[_auctionId].highestBid, block.timestamp);
+        for(uint256 i = 0; i < auctionTokenIds[msg.sender][nftToken].length; i++){
+            if(auctionTokenIds[msg.sender][nftToken][i] == _tokenId){
+                auctionTokenIds[msg.sender][nftToken][i] = auctionTokenIds[msg.sender][nftToken][auctionTokenIds[msg.sender][nftToken].length-1];
+                delete auctionTokenIds[msg.sender][nftToken][auctionTokenIds[msg.sender][nftToken].length-1];
+                break;
             }
         }
-        delete bid_info[msg.sender][_tokenId];
-        auction[_tokenId].totalBids--;
-        emit BidCancelled(msg.sender, auction[_tokenId].id, _tokenId, pending_claim_auction[msg.sender][_tokenId] - (pending_claim_auction[msg.sender][_tokenId] * (cancel_bid_fee / 100)), block.timestamp);
-        token.transfer(msg.sender, pending_claim_auction[msg.sender][_tokenId] - (pending_claim_auction[msg.sender][_tokenId] * (cancel_bid_fee / 100)));       
-        pending_claim_auction[msg.sender][_tokenId] = 0;        
-    }
+        delete auction[_auctionId];
+        EnumerableMap.remove(auctionId, _auctionId);      
+    },
+
 
     /// @dev Cancel the Offer.
     /// Transfer the offer amount to owner.
@@ -646,52 +663,21 @@ contract AuctionWithAdmin is Ownable {
                 block.timestamp
             );    
     }
-    
 
-    /// @dev Create claim after auction ends.
-    /// Transfer NFT to auction winner address.
-    /// Seller and Bidders (not win in auction) Withdraw their funds.
-    /// @param _tokenId - ID of NFT.
-    // function auctionClaim(uint256 _tokenId) public {
-    //     require(
-    //        auction[_tokenId].endTime < block.timestamp,
-    //         "auction not compeleted yet"
-    //     );
-    //     require(
-    //         auction[_tokenId].highestBidder == msg.sender || msg.sender == EnumerableMap.get(auctionId, _tokenId) || msg.sender == owner(),
-    //         "You are not highest Bidder or owner"
-    //     );
-        
-    //     if(auction_service_fee == true){
-    //         token.transfer(
-    //             beneficiary,
-    //             ((auction[_tokenId].highestBid * auction_token_fee) / 100)
-    //         );
-    //         emit AuctionFee(auction[_tokenId].id, _tokenId, ((auction[_tokenId].highestBid * auction_token_fee) / 100), block.timestamp);
-    //         token.transfer(
-    //             EnumerableMap.get(auctionId, _tokenId),
-    //             ((auction[_tokenId].highestBid * (100 - auction_token_fee)) /
-    //                 100)
-    //         );
-    //     }else{
-    //         token.transfer(
-    //             EnumerableMap.get(auctionId, _tokenId),
-    //             auction[_tokenId].highestBid
-    //         );
-    //     }
-    //     pending_claim_auction[auction[_tokenId].highestBidder][_tokenId] = 0;
-    //     nft_token.safeTransferFrom(address(this), auction[_tokenId].highestBidder, _tokenId, 1, "");          
-    //     emit AuctionClaimed(auction[_tokenId].id, msg.sender, _tokenId, auction[_tokenId].highestBid, block.timestamp);
-    //     for(uint256 i = 0; i < auctionTokenIds[msg.sender].length; i++){
-    //         if(auctionTokenIds[msg.sender][i] == _tokenId){
-    //             auctionTokenIds[msg.sender][i] = auctionTokenIds[msg.sender][auctionTokenIds[msg.sender].length-1];
-    //             delete auctionTokenIds[msg.sender][auctionTokenIds[msg.sender].length-1];
-    //             break;
-    //         }
-    //     }
-    //     delete auction[_tokenId];
-    //     EnumerableMap.remove(auctionId, _tokenId);      
-    // }
+    /// @dev Create claim after offer claim.
+    /// Offerers (not win in offer) Withdraw their funds.
+    /// @param sellId - sellId of NFT on offer.
+    function offerClaim(uint256 sellId, uint256 offerId) public {
+        IERC1155 nftToken = saleIdToNFT[sellId]; 
+        uint256 _tokenId = saleIdToTokenId[sellId];
+        require(offer[sellId][offerId].offerer  != msg.sender, "Your offer is running");
+        require(pending_claim_offer[msg.sender][_tokenId] != 0, "You are not a offerer or already claimed");
+        token.transfer(msg.sender, pending_claim_offer[msg.sender][_tokenId]);       
+        emit OfferClaimed(msg.sender, tokenIdToSaleId[nftToken][_tokenId], _tokenId, pending_claim_offer[msg.sender][_tokenId], block.timestamp);
+        delete offer_info[msg.sender][_tokenId];
+        pending_claim_offer[msg.sender][_tokenId] = 0;
+    }
+ 
 
     /// @dev Create claim after auction claim.
     /// bidders (not win in auction) Withdraw their funds.
@@ -703,29 +689,17 @@ contract AuctionWithAdmin is Ownable {
         emit AuctionClaimed(0, msg.sender, _tokenId, pending_claim_auction[msg.sender][_tokenId], block.timestamp);
         delete bid_info[msg.sender][_tokenId];
         pending_claim_auction[msg.sender][_tokenId] = 0;
-    }
-
-    /// @dev Create claim after offer claim.
-    /// Offerers (not win in offer) Withdraw their funds.
-    /// @param _tokenId - ID of NFT.
-    // function offerClaim(IERC1155 nftToken, uint256 _tokenId) public {
-    //     require(offer[_tokenId].offerer != msg.sender, "Your offer is running");
-    //     require(pending_claim_offer[msg.sender][_tokenId] != 0, "You are not a offerer or already claimed");
-    //     token.transfer(msg.sender, pending_claim_offer[msg.sender][_tokenId]);       
-    //     emit OfferClaimed(msg.sender, tokenIdToSaleId[nftToken][_tokenId], _tokenId, pending_claim_offer[msg.sender][_tokenId], block.timestamp);
-    //     delete offer_info[msg.sender][_tokenId];
-    //     pending_claim_offer[msg.sender][_tokenId] = 0;
-    // }
+    }    
 
     /// @dev Returns auction info for an NFT on auction.
-    /// @param _tokenId - ID of NFT on auction.
-    function getAuction(uint256 _tokenId)
+    /// @param _auctionId - _auctionId of NFT on auction.
+    function getAuction(uint256 _auctionId)
         public
         view
         virtual
         returns (AuctionDetails memory)
     {
-        return (auction[_tokenId]);
+        return (auction[_auctionId]);
     }
 
     /// @dev Returns auction info for an NFT on auction.
